@@ -1,0 +1,139 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: hrms-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-hrms_dev}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
+      POSTGRES_DB: ${DB_NAME:-hrms_dev}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-hrms_dev}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hrms_network
+    restart: unless-stopped
+
+  # MongoDB (for logs and audit)
+  mongo:
+    image: mongo:7-alpine
+    container_name: hrms-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin_password}
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hrms_network
+    restart: unless-stopped
+
+  # Redis (for caching and sessions)
+  redis:
+    image: redis:7-alpine
+    container_name: hrms-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_dev_password}
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hrms_network
+    restart: unless-stopped
+
+  # HRMS Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hrms-backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-hrms_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-dev_password}
+      DB_NAME: ${DB_NAME:-hrms_dev}
+      MONGO_URL: mongodb://admin:${MONGO_PASSWORD:-admin_password}@mongo:27017/hrms_dev?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_password}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your_super_secret_jwt_key_change_in_production_min_32_chars}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your_super_secret_refresh_key_change_in_production}
+      LOG_LEVEL: debug
+      CORS_ORIGIN: http://localhost:5173
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+      - /app/node_modules
+    networks:
+      - hrms_network
+    restart: unless-stopped
+    command: npm run dev:watch
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: hrms-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@hrms.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '5050:80'
+    depends_on:
+      - postgres
+    networks:
+      - hrms_network
+    restart: unless-stopped
+
+  # Optional: MongoDB Express for MongoDB management
+  mongo-express:
+    image: mongo-express:latest
+    container_name: hrms-mongo-express
+    environment:
+      ME_CONFIG_MONGODB_ADMIN_USERNAME: admin
+      ME_CONFIG_MONGODB_ADMIN_PASSWORD: ${MONGO_PASSWORD:-admin_password}
+      ME_CONFIG_MONGODB_URL: mongodb://admin:${MONGO_PASSWORD:-admin_password}@mongo:27017/?authSource=admin
+    ports:
+      - '8081:8081'
+    depends_on:
+      - mongo
+    networks:
+      - hrms_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+
+networks:
+  hrms_network:
+    driver: bridge

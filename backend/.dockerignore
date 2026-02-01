@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+.DS_Store
+logs
+*.log
+README.md
+.vscode
+.idea
+src
+tests
+*.ts
+knexfile.js
+tsconfig.json
