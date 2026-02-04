@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import { config } from './env';
 import { logger } from './logger';
+import { trackCacheOp } from '../middleware/metrics';
 
 let redisClient: Redis;
 
@@ -20,6 +21,21 @@ export const initializeRedis = async (): Promise<Redis> => {
 
     redisClient.on('connect', () => {
         logger.info('Redis connected successfully');
+
+        // Wrap get/set for metrics
+        const originalGet = redisClient.get.bind(redisClient);
+        redisClient.get = (async (key: string) => {
+            const val = await originalGet(key);
+            trackCacheOp(val ? 'hit' : 'miss');
+            return val;
+        }) as any;
+
+        const originalSet = redisClient.set.bind(redisClient);
+        redisClient.set = (async (...args: any[]) => {
+            const res = await (originalSet as any)(...args);
+            trackCacheOp('set');
+            return res;
+        }) as any;
     });
 
     try {

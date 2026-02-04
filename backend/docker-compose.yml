@@ -3,12 +3,13 @@ version: '3.9'
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: hrms-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-hrms_dev}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
       POSTGRES_DB: ${DB_NAME:-hrms_dev}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
     ports:
       - '${DB_PORT:-5432}:5432'
     volumes:
@@ -27,14 +28,15 @@ services:
     image: mongo:7-alpine
     container_name: hrms-mongo
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin_password}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-hrms_dev}
     ports:
-      - '27017:27017'
+      - '${MONGO_PORT:-27017}:27017'
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet || exit 1
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,12 +49,17 @@ services:
     image: redis:7-alpine
     container_name: hrms-redis
     ports:
-      - '6379:6379'
+      - '${REDIS_PORT:-6379}:6379'
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_dev_password}
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_dev_password}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD', 'redis-cli', '--raw', 'incr', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -67,21 +74,55 @@ services:
       dockerfile: Dockerfile
     container_name: hrms-backend
     environment:
-      NODE_ENV: development
-      PORT: 3000
+      # Node Environment
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3000}
+      
+      # PostgreSQL Connection
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-hrms_dev}
       DB_PASSWORD: ${DB_PASSWORD:-dev_password}
       DB_NAME: ${DB_NAME:-hrms_dev}
-      MONGO_URL: mongodb://admin:${MONGO_PASSWORD:-admin_password}@mongo:27017/hrms_dev?authSource=admin
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_password}@redis:6379
+      DB_POOL_MIN: ${DB_POOL_MIN:-5}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      
+      # MongoDB Connection
+      MONGO_URL: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_PASSWORD:-admin_password}@mongo:27017/${MONGO_DB:-hrms_dev}?authSource=admin
+      
+      # Redis Connection
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_password}@redis:6379/${REDIS_DB:-0}
+      
+      # JWT Configuration
       JWT_SECRET: ${JWT_SECRET:-your_super_secret_jwt_key_change_in_production_min_32_chars}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your_super_secret_refresh_key_change_in_production}
-      LOG_LEVEL: debug
-      CORS_ORIGIN: http://localhost:5173
+      JWT_EXPIRY: ${JWT_EXPIRY:-3600}
+      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-604800}
+      
+      # OAuth2 (Google) - Optional
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:3000/api/auth/oauth/google/callback}
+      
+      # AWS Configuration - Optional
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-hrms-documents-dev}
+      AWS_SES_EMAIL: ${AWS_SES_EMAIL:-noreply@hrms.masirat.com}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      LOG_FILE: logs/app.log
+      
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      
+      # API URLs
+      API_URL: ${API_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     ports:
-      - '3000:3000'
+      - '${PORT:-3000}:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,9 +131,10 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./src:/app/src
+      - ./src:/app/src:ro
       - ./dist:/app/dist
       - /app/node_modules
+      - backend_logs:/app/logs
     networks:
       - hrms_network
     restart: unless-stopped
@@ -103,10 +145,11 @@ services:
     image: dpage/pgadmin4:latest
     container_name: hrms-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@hrms.local
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@hrms.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
-      - '5050:80'
+      - '${PGADMIN_PORT:-5050}:80'
     depends_on:
       - postgres
     networks:
@@ -118,11 +161,13 @@ services:
     image: mongo-express:latest
     container_name: hrms-mongo-express
     environment:
-      ME_CONFIG_MONGODB_ADMIN_USERNAME: admin
+      ME_CONFIG_MONGODB_ADMIN_USERNAME: ${MONGO_ROOT_USER:-admin}
       ME_CONFIG_MONGODB_ADMIN_PASSWORD: ${MONGO_PASSWORD:-admin_password}
-      ME_CONFIG_MONGODB_URL: mongodb://admin:${MONGO_PASSWORD:-admin_password}@mongo:27017/?authSource=admin
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_PASSWORD:-admin_password}@mongo:27017/?authSource=admin
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-admin}
     ports:
-      - '8081:8081'
+      - '${MONGO_EXPRESS_PORT:-8081}:8081'
     depends_on:
       - mongo
     networks:
@@ -131,9 +176,17 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
   mongo_data:
+    driver: local
   redis_data:
+    driver: local
+  backend_logs:
+    driver: local
 
 networks:
   hrms_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

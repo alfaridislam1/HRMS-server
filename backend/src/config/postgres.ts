@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { config } from './env';
 import { logger } from './logger';
+import { trackDbQuery } from '../middleware/metrics';
 
 let pool: Pool;
 
@@ -22,6 +23,21 @@ export const initializePostgres = async (): Promise<Pool> => {
 
     try {
         const client = await pool.connect();
+
+        // Wrap query for metrics
+        const originalQuery = client.query.bind(client);
+        client.query = (async (...args: any[]) => {
+            const start = Date.now();
+            try {
+                const res = await (originalQuery as any)(...args);
+                trackDbQuery('select'); // Simplification
+                return res;
+            } finally {
+                const duration = Date.now() - start;
+                // Could track duration here too
+            }
+        }) as any;
+
         const result = await client.query('SELECT NOW()');
         logger.info(`PostgreSQL connected. Server time: ${result.rows[0].now}`);
         client.release();

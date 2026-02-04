@@ -1,0 +1,65 @@
+version: '3.9'
+
+# Production docker-compose for AWS ECS/EKS
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: hrms-backend:latest
+    container_name: hrms-backend-prod
+    environment:
+      # All environment variables should be injected via:
+      # 1. AWS ECS Task Definition environment variables
+      # 2. AWS Secrets Manager
+      # 3. AWS Systems Manager Parameter Store
+      # 4. EKS ConfigMaps and Secrets
+      
+      # Required - Set via ECS/EKS
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      
+      # Database connections (use RDS/DocumentDB endpoints in production)
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      
+      # MongoDB (use DocumentDB endpoint in production)
+      MONGO_URL: ${MONGO_URL}
+      
+      # Redis (use ElastiCache endpoint in production)
+      REDIS_URL: ${REDIS_URL}
+      
+      # JWT Secrets (use AWS Secrets Manager)
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      
+      # AWS Configuration (use IAM roles in ECS/EKS)
+      AWS_REGION: ${AWS_REGION}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_SES_EMAIL: ${AWS_SES_EMAIL}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN}
+    ports:
+      - '${PORT:-3000}:3000'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:${PORT:-3000}/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

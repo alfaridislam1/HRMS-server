@@ -1,3 +1,272 @@
+name: Backend CI/CD
+
+on:
+  pull_request:
+    paths:
+      - '**'
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Deploy target'
+        type: choice
+        options: [ecs, eks, none]
+        default: ecs
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPO: ${{ secrets.ECR_REPO_BACKEND }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hrms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/hrms_test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Integration tests
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/hrms_test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Docker build
+        run: docker build -t backend:${{ env.IMAGE_TAG }} .
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Docker build
+        run: docker build -t backend:${{ env.IMAGE_TAG }} .
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Trivy container scan (fail on High/Critical)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: backend:${{ env.IMAGE_TAG }}
+          format: 'sarif'
+          output: 'trivy-backend.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: false
+
+      - name: Trivy container scan (report all)
+        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
+        with:
+          image-ref: backend:${{ env.IMAGE_TAG }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Upload Trivy SARIF (filesystem)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+
+      - name: Upload Trivy SARIF (container)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-backend.sarif
+
+      - name: CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          languages: javascript
+
+  push_image:
+    needs: ci
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          IMAGE_URI="${REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+          docker build -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "$GITHUB_ENV"
+
+  deploy:
+    needs: push_image
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+    steps:
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Decide deploy target
+        id: tgt
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "target=${{ inputs.deploy_target }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "${{ secrets.DEPLOY_TARGET }}" ]]; then
+            echo "target=${{ secrets.DEPLOY_TARGET }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=ecs" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to ECS (with rollback)
+        if: steps.tgt.outputs.target == 'ecs'
+        shell: bash
+        env:
+          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ secrets.ECS_SERVICE_BACKEND }}
+          ECS_CONTAINER_NAME: ${{ secrets.ECS_CONTAINER_NAME_BACKEND }}
+          IMAGE_URI: ${{ env.IMAGE_URI }}
+        run: |
+          set -euo pipefail
+          PREV_TASKDEF="$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" --query "services[0].taskDefinition" --output text)"
+          sudo apt-get update -y && sudo apt-get install -y jq
+          NEW_TASKDEF_JSON="$(mktemp)"
+          aws ecs describe-task-definition --task-definition "${PREV_TASKDEF}" --query "taskDefinition" > "${NEW_TASKDEF_JSON}"
+          jq 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)
+              | .containerDefinitions |= map(if .name=="'"${ECS_CONTAINER_NAME}"'" then .image="'"${IMAGE_URI}"'" else . end)' \
+              "${NEW_TASKDEF_JSON}" > "${NEW_TASKDEF_JSON}.rendered"
+          NEW_TASKDEF_ARN="$(aws ecs register-task-definition --cli-input-json "file://${NEW_TASKDEF_JSON}.rendered" --query "taskDefinition.taskDefinitionArn" --output text)"
+
+          set +e
+          aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" --task-definition "${NEW_TASKDEF_ARN}" --force-new-deployment
+          aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
+          RC=$?
+          set -e
+          if [[ $RC -ne 0 ]]; then
+            aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" --task-definition "${PREV_TASKDEF}" --force-new-deployment
+            aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
+            exit 1
+          fi
+
+      - name: Deploy to EKS (with rollback)
+        if: steps.tgt.outputs.target == 'eks'
+        shell: bash
+        env:
+          EKS_CLUSTER: ${{ secrets.EKS_CLUSTER }}
+          K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+          K8S_DEPLOYMENT: ${{ secrets.K8S_DEPLOYMENT_BACKEND }}
+          K8S_CONTAINER: ${{ secrets.K8S_CONTAINER_BACKEND }}
+          IMAGE_URI: ${{ env.IMAGE_URI }}
+        run: |
+          set -euo pipefail
+          curl -sSL -o kubectl "https://dl.k8s.io/release/$(curl -sSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+          aws eks update-kubeconfig --name "${EKS_CLUSTER}" --region "${AWS_REGION}"
+          set +e
+          kubectl -n "${K8S_NAMESPACE}" set image "deployment/${K8S_DEPLOYMENT}" "${K8S_CONTAINER}=${IMAGE_URI}"
+          kubectl -n "${K8S_NAMESPACE}" rollout status "deployment/${K8S_DEPLOYMENT}" --timeout=300s
+          RC=$?
+          set -e
+          if [[ $RC -ne 0 ]]; then
+            kubectl -n "${K8S_NAMESPACE}" rollout undo "deployment/${K8S_DEPLOYMENT}"
+            kubectl -n "${K8S_NAMESPACE}" rollout status "deployment/${K8S_DEPLOYMENT}" --timeout=300s
+            exit 1
+          fi
+
+  notify_failure:
+    needs: [ci, push_image, deploy]
+    runs-on: ubuntu-latest
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Slack notify (if configured)
+        if: secrets.SLACK_WEBHOOK_URL != ''
+        shell: bash
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -n --arg repo "${GITHUB_REPOSITORY}" --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{text: ("Backend pipeline failed in " + $repo + "\nRun: " + $run)}')
+          curl -sS -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK_URL}"
+
 name: CI/CD Pipeline
 
 on:

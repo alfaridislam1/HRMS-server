@@ -13,5 +13,9 @@ README.md
 src
 tests
 *.ts
+!*.d.ts
 knexfile.js
 tsconfig.json
+*.md
+.dockerignore
+docker-compose.yml

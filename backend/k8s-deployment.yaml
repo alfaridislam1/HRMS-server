@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hrms-backend
+  namespace: hrms
+  labels:
+    app: hrms-backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hrms-backend
+  template:
+    metadata:
+      labels:
+        app: hrms-backend
+        version: v1
+    spec:
+      containers:
+      - name: hrms-backend
+        image: ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/hrms-backend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: AWS_REGION
+          value: "REGION"
+        envFrom:
+        - configMapRef:
+            name: hrms-backend-config
+        - secretRef:
+            name: hrms-backend-secrets
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 40
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: logs
+        emptyDir: {}
+      serviceAccountName: hrms-backend-sa
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hrms-backend-service
+  namespace: hrms
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: hrms-backend
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hrms-backend-config
+  namespace: hrms
+data:
+  DB_HOST: "rds-endpoint.region.rds.amazonaws.com"
+  DB_PORT: "5432"
+  DB_NAME: "hrms_prod"
+  DB_USER: "hrms_user"
+  DB_POOL_MIN: "5"
+  DB_POOL_MAX: "20"
+  LOG_LEVEL: "info"
+  CORS_ORIGIN: "https://hrms.masirat.com"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hrms-backend-secrets
+  namespace: hrms
+type: Opaque
+stringData:
+  DB_PASSWORD: "CHANGE_ME"
+  JWT_SECRET: "CHANGE_ME"
+  JWT_REFRESH_SECRET: "CHANGE_ME"
+  MONGO_URL: "mongodb://user:password@docdb-endpoint:27017/hrms_prod"
+  REDIS_URL: "redis://elasticache-endpoint:6379"

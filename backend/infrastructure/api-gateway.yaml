@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API Gateway configuration for HRMS with security and obfuscation'
+
+Resources:
+  # API Gateway REST API
+  HRMSApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: hrms-api-gateway
+      Description: HRMS API Gateway with route obfuscation
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: execute-api:Invoke
+            Resource: '*'
+            Condition:
+              IpAddress:
+                aws:SourceIp:
+                  - !Ref AllowedIPs  # Configure allowed IPs
+
+  # API Gateway Deployment
+  HRMSApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - HRMSApiGatewayMethod
+    Properties:
+      RestApiId: !Ref HRMSApiGateway
+      StageName: prod
+      StageDescription: Production stage
+
+  # API Gateway Resource (obfuscated endpoint)
+  HRMSApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref HRMSApiGateway
+      ParentId: !GetAtt HRMSApiGateway.RootResourceId
+      PathPart: '{proxy+}'  # Catch-all for obfuscated routes
+
+  # API Gateway Method
+  HRMSApiGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref HRMSApiGateway
+      ResourceId: !Ref HRMSApiGatewayResource
+      HttpMethod: ANY
+      AuthorizationType: AWS_IAM  # Use IAM for authentication
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: !Sub 'http://${BackendLoadBalancer.DNSName}/{proxy}'
+        RequestParameters:
+          integration.request.path.proxy: 'method.request.path.proxy'
+        PassthroughBehavior: WHEN_NO_MATCH
+      MethodResponses:
+        - StatusCode: 200
+        - StatusCode: 400
+        - StatusCode: 401
+        - StatusCode: 403
+        - StatusCode: 500
+
+  # API Gateway Usage Plan
+  HRMSApiGatewayUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: hrms-api-usage-plan
+      ApiStages:
+        - ApiId: !Ref HRMSApiGateway
+          Stage: !Ref HRMSApiGatewayDeployment
+      Throttle:
+        BurstLimit: 100
+        RateLimit: 50
+      Quota:
+        Limit: 10000
+        Period: DAY
+
+  # API Gateway API Key
+  HRMSApiGatewayKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: hrms-api-key
+      Enabled: true
+      GenerateDistinctId: true
+
+  # WAF Web ACL for additional security
+  HRMSWAFWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: hrms-api-waf
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      Rules:
+        # Rate limiting rule
+        - Name: RateLimitRule
+          Priority: 1
+          Statement:
+            RateBasedStatement:
+              Limit: 2000
+              AggregateKeyType: IP
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRule
+        
+        # SQL injection protection
+        - Name: SQLInjectionRule
+          Priority: 2
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLInjectionRule
+        
+        # XSS protection
+        - Name: XSSRule
+          Priority: 3
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: XSSRule
+
+Parameters:
+  AllowedIPs:
+    Type: CommaDelimitedList
+    Default: '0.0.0.0/0'
+    Description: Allowed source IPs for API Gateway
+  
+  BackendLoadBalancer:
+    Type: String
+    Description: Backend load balancer DNS name
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${HRMSApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  
+  ApiKeyId:
+    Description: API Gateway API Key ID
+    Value: !Ref HRMSApiGatewayKey
