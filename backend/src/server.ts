@@ -33,7 +33,7 @@ const startServer = async () => {
         await initializeRedis();
 
         // Start Express server
-        server = app.listen(PORT, '0.0.0.0', () => {
+        server = app.listen(PORT, '127.0.0.1', () => {
             logger.info(`✓ HRMS Backend Server running on port ${PORT}`);
             logger.info(`✓ API URL: ${config.urls.api}`);
             logger.info(`✓ Environment: ${config.env}`);
@@ -44,8 +44,8 @@ const startServer = async () => {
     }
 };
 
-const gracefulShutdown = async () => {
-    logger.info('Shutting down server gracefully...');
+async function gracefulShutdown(signal: string) {
+    logger.info(`${signal} received. Starting graceful shutdown...`);
 
     if (server) {
         server.close(async () => {
@@ -77,14 +77,14 @@ process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
 // Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', (err: Error) => {
     logger.error('Uncaught Exception:', err);
-    gracefulShutdown();
+    process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
     logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    gracefulShutdown();
+    gracefulShutdown('unhandledRejection');
 });
 
 startServer();

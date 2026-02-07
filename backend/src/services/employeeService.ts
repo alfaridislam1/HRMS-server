@@ -2,25 +2,24 @@ import { Pool, QueryResult } from 'pg';
 import { getPostgres } from '@config/postgres';
 import { getRedis } from '@config/redis';
 import { logger } from '@config/logger';
-import { Employee } from '@types/index';
+import { Employee } from '@app-types/index';
 import { v4 as uuidv4 } from 'uuid';
 
 export class EmployeeService {
-    private db: Pool;
-
-    constructor() {
-        this.db = getPostgres();
+    private get db(): Pool {
+        return getPostgres();
     }
 
     async listEmployees(
         tenantId: string,
+        schemaName: string,
         page: number = 1,
         limit: number = 20,
         filters: any = {}
     ): Promise<{ employees: Employee[]; total: number }> {
         try {
             const offset = (page - 1) * limit;
-            let query = 'SELECT * FROM employees WHERE deleted_at IS NULL';
+            let query = `SELECT * FROM "${schemaName}".employees WHERE deleted_at IS NULL`;
             const params: any[] = [];
 
             if (filters.department_id) {
@@ -43,7 +42,7 @@ export class EmployeeService {
 
             const result: QueryResult<Employee> = await this.db.query(query, params);
 
-            const countQuery = 'SELECT COUNT(*) FROM employees WHERE deleted_at IS NULL';
+            const countQuery = `SELECT COUNT(*) FROM "${schemaName}".employees WHERE deleted_at IS NULL`;
             const countResult = await this.db.query(countQuery);
             const total = parseInt(countResult.rows[0].count, 10);
 
@@ -57,7 +56,7 @@ export class EmployeeService {
         }
     }
 
-    async getEmployee(tenantId: string, employeeId: string): Promise<Employee | null> {
+    async getEmployee(tenantId: string, schemaName: string, employeeId: string): Promise<Employee | null> {
         try {
             const redis = getRedis();
             const cacheKey = `employee:${tenantId}:${employeeId}`;
@@ -69,7 +68,7 @@ export class EmployeeService {
             }
 
             const result: QueryResult<Employee> = await this.db.query(
-                'SELECT * FROM employees WHERE id = $1 AND deleted_at IS NULL',
+                `SELECT * FROM "${schemaName}".employees WHERE id = $1 AND deleted_at IS NULL`,
                 [employeeId]
             );
 
@@ -91,6 +90,7 @@ export class EmployeeService {
 
     async createEmployee(
         tenantId: string,
+        schemaName: string,
         data: Partial<Employee>,
         userId: string
     ): Promise<Employee> {
@@ -108,7 +108,7 @@ export class EmployeeService {
             } = data;
 
             const query = `
-        INSERT INTO employees (
+        INSERT INTO "${schemaName}".employees (
           id, employee_id, first_name, last_name, email_company, job_title,
           department_id, employment_type, employment_status, start_date, created_by, updated_by
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
@@ -145,6 +145,7 @@ export class EmployeeService {
 
     async updateEmployee(
         tenantId: string,
+        schemaName: string,
         employeeId: string,
         data: Partial<Employee>,
         userId: string
@@ -171,7 +172,7 @@ export class EmployeeService {
                 .map((key) => (data as any)[key]);
 
             const query = `
-        UPDATE employees
+        UPDATE "${schemaName}".employees
         SET ${updateFields}, updated_by = $${updateValues.length + 1}, updated_at = NOW()
         WHERE id = $${updateValues.length + 2} AND deleted_at IS NULL
         RETURNING *
@@ -201,10 +202,10 @@ export class EmployeeService {
         }
     }
 
-    async deleteEmployee(tenantId: string, employeeId: string, userId: string): Promise<void> {
+    async deleteEmployee(tenantId: string, schemaName: string, employeeId: string, userId: string): Promise<void> {
         try {
             const query = `
-        UPDATE employees
+        UPDATE "${schemaName}".employees
         SET deleted_at = NOW(), updated_by = $1
         WHERE id = $2 AND deleted_at IS NULL
       `;

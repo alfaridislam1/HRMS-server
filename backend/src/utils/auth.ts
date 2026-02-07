@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcryptjs from 'bcryptjs';
 import { config } from '@config/env';
 import { logger } from '@config/logger';
-import { JWTPayload } from '@types/index';
+import { JWTPayload } from '@app-types/index';
 
 export const generateAccessToken = (payload: Omit<JWTPayload, 'iat' | 'exp'>): string => {
     try {

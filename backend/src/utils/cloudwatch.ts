@@ -13,7 +13,10 @@ let cloudWatchClient: CloudWatchClient | null = null;
 /**
  * Initialize CloudWatch clients
  */
-function getCloudWatchLogsClient(): CloudWatchLogsClient {
+function getCloudWatchLogsClient(): CloudWatchLogsClient | null {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+        return null;
+    }
     if (!cloudWatchLogsClient) {
         cloudWatchLogsClient = new CloudWatchLogsClient({
             region: process.env.AWS_REGION || 'ap-south-1',
@@ -22,7 +25,10 @@ function getCloudWatchLogsClient(): CloudWatchLogsClient {
     return cloudWatchLogsClient;
 }
 
-function getCloudWatchClient(): CloudWatchClient {
+function getCloudWatchClient(): CloudWatchClient | null {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+        return null;
+    }
     if (!cloudWatchClient) {
         cloudWatchClient = new CloudWatchClient({
             region: process.env.AWS_REGION || 'ap-south-1',
@@ -36,7 +42,8 @@ function getCloudWatchClient(): CloudWatchClient {
  */
 async function ensureLogGroup(logGroupName: string): Promise<void> {
     const client = getCloudWatchLogsClient();
-    
+    if (!client) return;
+
     try {
         await client.send(new CreateLogGroupCommand({
             logGroupName,
@@ -55,7 +62,8 @@ async function ensureLogGroup(logGroupName: string): Promise<void> {
  */
 async function ensureLogStream(logGroupName: string, logStreamName: string): Promise<void> {
     const client = getCloudWatchLogsClient();
-    
+    if (!client) return;
+
     try {
         await client.send(new CreateLogStreamCommand({
             logGroupName,
@@ -82,10 +90,14 @@ export async function sendLogToCloudWatch(
     try {
         await ensureLogGroup(logGroupName);
         await ensureLogStream(logGroupName, logStreamName);
-        
+
         const client = getCloudWatchLogsClient();
+        if (!client) {
+            logger.debug(`Skipping CloudWatch log (no credentials): ${message}`);
+            return;
+        }
         const timestamp = Date.now();
-        
+
         await client.send(new PutLogEventsCommand({
             logGroupName,
             logStreamName,
@@ -118,8 +130,11 @@ export async function sendMetricToCloudWatch(
 ): Promise<void> {
     try {
         const client = getCloudWatchClient();
+        if (!client) {
+            return;
+        }
         const namespace = process.env.CLOUDWATCH_NAMESPACE || 'HRMS';
-        
+
         await client.send(new PutMetricDataCommand({
             Namespace: namespace,
             MetricData: [
@@ -156,13 +171,13 @@ export const CloudWatchMetrics = {
             Path: path,
             StatusCode: statusCode.toString(),
         });
-        
+
         await sendMetricToCloudWatch('APIResponseTime', duration, 'Seconds', {
             Method: method,
             Path: path,
         });
     },
-    
+
     /**
      * Track database query
      */
@@ -170,12 +185,12 @@ export const CloudWatchMetrics = {
         await sendMetricToCloudWatch('DatabaseQueries', 1, 'Count', {
             QueryType: queryType,
         });
-        
+
         await sendMetricToCloudWatch('DatabaseQueryTime', duration, 'Seconds', {
             QueryType: queryType,
         });
     },
-    
+
     /**
      * Track authentication event
      */
@@ -185,7 +200,7 @@ export const CloudWatchMetrics = {
             Success: success.toString(),
         });
     },
-    
+
     /**
      * Track error
      */

@@ -253,6 +253,7 @@ export function oauth2CallbackHandler(providerName: string) {
                     message: error.message || 'OAuth2 authentication failed',
                 },
             });
+            return;
         }
     };
 }

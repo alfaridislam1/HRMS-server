@@ -1,8 +1,13 @@
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<any> {
+    // Enable uuid-ossp or pgcrypto for UUID generation
+    await knex.raw('CREATE EXTENSION IF NOT EXISTS "pgcrypto"');
+
     // Create public schema tables
-    await knex.schema.createTable('public.tenants', (table) => {
+
+    await knex.schema.withSchema('public').createTable('tenants', (table) => {
+
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
         table.string('name', 255).notNullable();
         table.string('slug', 100).unique().notNullable();
@@ -14,7 +19,8 @@ export async function up(knex: Knex): Promise<any> {
         table.timestamps(true, true);
     });
 
-    await knex.schema.createTable('public.users', (table) => {
+    await knex.schema.withSchema('public').createTable('users', (table) => {
+
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
         table.string('email', 255).unique().notNullable();
         table.string('password_hash', 255);
@@ -33,7 +39,8 @@ export async function up(knex: Knex): Promise<any> {
         table.index(['oauth_provider', 'oauth_id']);
     });
 
-    await knex.schema.createTable('public.roles', (table) => {
+    await knex.schema.withSchema('public').createTable('roles', (table) => {
+
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
         table.uuid('tenant_id').references('tenants.id').onDelete('CASCADE');
         table.uuid('user_id').references('users.id').onDelete('CASCADE');

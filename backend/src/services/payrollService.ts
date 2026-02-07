@@ -1,14 +1,12 @@
 import { Pool, QueryResult } from 'pg';
 import { getPostgres } from '@config/postgres';
 import { logger } from '@config/logger';
-import { PayrollPeriod, SalarySlip } from '@types/index';
+import { PayrollPeriod, SalarySlip } from '@app-types/index';
 import { v4 as uuidv4 } from 'uuid';
 
 export class PayrollService {
-    private db: Pool;
-
-    constructor() {
-        this.db = getPostgres();
+    private get db(): Pool {
+        return getPostgres();
     }
 
     async createPayrollPeriod(

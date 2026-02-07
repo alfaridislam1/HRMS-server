@@ -66,6 +66,7 @@ export const rbacMiddleware = (requiredRoles?: string[], requiredPermissions?: s
                     message: 'Authorization check failed',
                 },
             });
+            return;
         }
     };
 };

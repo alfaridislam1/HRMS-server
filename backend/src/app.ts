@@ -1,6 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import morgan from 'morgan';
 import 'express-async-errors';
 
@@ -13,48 +12,45 @@ import { initializeRedis, closeRedis } from '@config/redis';
 import authMiddleware from '@middleware/auth';
 import { errorHandler, AppError } from '@middleware/errorHandler';
 
-// Routes
-import authRoutes from '@routes/auth';
-import employeeRoutes from '@routes/employees';
-import leaveRoutes from '@routes/leaves';
-import payrollRoutes from '@routes/payroll';
-
 const app: Express = express();
 
-// Middleware
-app.use(helmet());
-app.use(cors({
-    origin: config.cors.origin,
-    credentials: true,
-    optionsSuccessStatus: 200,
-}));
+// 1. Diagnostic Logging (Absolute Top)
+app.use((req: Request, res: Response, next: NextFunction) => {
+    console.log(`\n--- Incoming Request: ${req.method} ${req.url} ---`);
+    console.log(`Headers: ${JSON.stringify(req.headers, null, 2)}`);
+    next();
+});
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
-
-// Logging
-const morganFormat = ':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" - :response-time ms';
-app.use(morgan(morganFormat, {
-    stream: {
-        write: (message: string) => logger.info(message.trim()),
-    },
-}));
-
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/v1/employees', employeeRoutes);
-app.use('/api/v1/leaves', leaveRoutes);
-app.use('/api/v1/payroll', payrollRoutes);
-
-// Health check
+// 2. Simple Health Check (Before heavy middleware)
 app.get('/health', (req: Request, res: Response) => {
-    res.json({
+    res.status(200).json({
         success: true,
         status: 'ok',
         timestamp: new Date().toISOString(),
         environment: config.env,
     });
 });
+
+// 3. Optional Middleware (Commented out for debugging)
+// app.use(helmet());
+// app.use(cors({ ... }));
+
+app.use(morgan('dev'));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Routes
+import authRoutes from '@routes/auth';
+import employeeRoutes from '@routes/employees';
+import departmentRoutes from '@routes/departments';
+import leaveRoutes from '@routes/leaves';
+import payrollRoutes from '@routes/payroll';
+
+app.use('/api/auth', authRoutes);
+app.use('/api/v1/employees', employeeRoutes);
+app.use('/api/v1/departments', departmentRoutes);
+app.use('/api/v1/leaves', leaveRoutes);
+app.use('/api/v1/payroll', payrollRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

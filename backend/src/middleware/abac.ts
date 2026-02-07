@@ -189,6 +189,7 @@ export function abacMiddleware(
                     message: 'Authorization check failed',
                 },
             });
+            return;
         }
     };
 }

@@ -1,14 +1,12 @@
 import { Pool, QueryResult } from 'pg';
 import { getPostgres } from '@config/postgres';
 import { logger } from '@config/logger';
-import { LeaveRequest } from '@types/index';
+import { LeaveRequest } from '@app-types/index';
 import { v4 as uuidv4 } from 'uuid';
 
 export class LeaveService {
-    private db: Pool;
-
-    constructor() {
-        this.db = getPostgres();
+    private get db(): Pool {
+        return getPostgres();
     }
 
     async listLeaveRequests(

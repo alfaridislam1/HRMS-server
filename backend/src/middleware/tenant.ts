@@ -7,31 +7,34 @@ export const tenantMiddleware = async (
     req: ExtendedRequest,
     res: Response,
     next: NextFunction
-) => {
+): Promise<void> => {
     try {
         if (!req.tenantId) {
-            return res.status(401).json({
+            res.status(401).json({
                 error: {
                     code: 'MISSING_TENANT',
                     message: 'Tenant ID not found in request',
                 },
             });
+            return;
         }
 
         // Fetch tenant info from public schema
         const db = getPostgres();
         const tenantResult = await db.query(
-            'SELECT id, schema_name FROM public.tenants WHERE id = $1 AND subscription_status = $2',
-            [req.tenantId, 'active']
+            'SELECT id, schema_name FROM public.tenants WHERE id = $1 AND subscription_status IN ($2, $3)',
+            [req.tenantId, 'active', 'trial']
         );
 
+
         if (tenantResult.rows.length === 0) {
-            return res.status(403).json({
+            res.status(403).json({
                 error: {
                     code: 'TENANT_NOT_FOUND',
                     message: 'Tenant not found or inactive',
                 },
             });
+            return;
         }
 
         const tenant = tenantResult.rows[0];
@@ -51,6 +54,7 @@ export const tenantMiddleware = async (
                 message: 'Failed to set tenant context',
             },
         });
+        return;
     }
 };
 

@@ -11,7 +11,10 @@ let secretsManagerClient: SecretsManagerClient | null = null;
 /**
  * Initialize Secrets Manager client
  */
-function getSecretsManagerClient(): SecretsManagerClient {
+function getSecretsManagerClient(): SecretsManagerClient | null {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+        return null;
+    }
     if (!secretsManagerClient) {
         secretsManagerClient = new SecretsManagerClient({
             region: process.env.AWS_REGION || 'ap-south-1',
@@ -26,6 +29,10 @@ function getSecretsManagerClient(): SecretsManagerClient {
 export async function getSecret(secretName: string): Promise<string> {
     try {
         const client = getSecretsManagerClient();
+        if (!client) {
+            logger.debug(`Skipping AWS secret fetch (no credentials): ${secretName}`);
+            return '';
+        }
         const command = new GetSecretValueCommand({
             SecretId: secretName,
         });
@@ -66,7 +73,7 @@ export async function loadSecretsIntoEnv(secretNames: string[]): Promise<void> {
     for (const secretName of secretNames) {
         try {
             const secretValue = await getSecret(secretName);
-            
+
             // If secret is JSON, parse and set individual keys
             try {
                 const secretJson = JSON.parse(secretValue);
@@ -112,6 +119,10 @@ export const HRMS_SECRETS = {
  * Load all HRMS secrets at startup
  */
 export async function loadHRMSSecrets(): Promise<void> {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+        logger.info('Skipping AWS Secrets Manager initialization (no credentials found)');
+        return;
+    }
     const secretNames = Object.values(HRMS_SECRETS);
     await loadSecretsIntoEnv(secretNames);
     logger.info(`Loaded ${secretNames.length} secrets from AWS Secrets Manager`);

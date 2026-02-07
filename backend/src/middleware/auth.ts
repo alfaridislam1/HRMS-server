@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken, decodeToken } from '@utils/auth';
 import { logger } from '@config/logger';
-import { AuthenticatedRequest } from '@types/index';
+import { AuthenticatedRequest } from '@app-types/index';
 
 export interface ExtendedRequest extends Request, AuthenticatedRequest {
     userId?: string;
@@ -11,26 +11,28 @@ export interface ExtendedRequest extends Request, AuthenticatedRequest {
     permissions?: string[];
 }
 
-export const authMiddleware = (req: ExtendedRequest, res: Response, next: NextFunction) => {
+export const authMiddleware = (req: ExtendedRequest, res: Response, next: NextFunction): void => {
     try {
         const authHeader = req.headers.authorization;
         if (!authHeader) {
-            return res.status(401).json({
+            res.status(401).json({
                 error: {
                     code: 'UNAUTHORIZED',
                     message: 'Missing authorization header',
                 },
             });
+            return;
         }
 
         const token = authHeader.split(' ')[1];
         if (!token) {
-            return res.status(401).json({
+            res.status(401).json({
                 error: {
                     code: 'UNAUTHORIZED',
                     message: 'Invalid authorization header format',
                 },
             });
+            return;
         }
 
         const decoded = verifyAccessToken(token);
@@ -46,21 +48,23 @@ export const authMiddleware = (req: ExtendedRequest, res: Response, next: NextFu
         logger.warn('Authentication failed:', err.message);
 
         if (err.name === 'TokenExpiredError') {
-            return res.status(401).json({
+            res.status(401).json({
                 error: {
                     code: 'TOKEN_EXPIRED',
                     message: 'Access token has expired',
                 },
             });
+            return;
         }
 
         if (err.name === 'JsonWebTokenError') {
-            return res.status(401).json({
+            res.status(401).json({
                 error: {
                     code: 'INVALID_TOKEN',
                     message: 'Invalid access token',
                 },
             });
+            return;
         }
 
         res.status(401).json({

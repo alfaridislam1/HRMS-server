@@ -38,6 +38,16 @@ export interface ApiResponse<T> {
     };
 }
 
+export interface Department {
+    id: string;
+    name: string;
+    code?: string;
+    parent_department_id?: string;
+    budget?: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface Employee {
     id: string;
     tenant_id: string;

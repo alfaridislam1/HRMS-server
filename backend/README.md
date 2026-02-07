@@ -31,7 +31,6 @@ backend/
 │   ├── migrations/      # Database migrations
 │   ├── app.ts           # Express app setup
 │   └── server.ts        # Entry point
-├── dist/                # Compiled JavaScript
 ├── Dockerfile           # Multi-stage Docker build
 ├── docker-compose.yml   # Local development stack
 ├── knexfile.js          # Knex configuration
@@ -196,21 +195,6 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
 - **salary_slips**: Individual salary details
 - **audit_log**: All data changes
 
-## 🧪 Testing
-
-```bash
-# Unit tests
-npm run test
-
-# Watch mode
-npm run test:watch
-
-# Integration tests
-npm run test:integration
-
-# Coverage
-npm run test -- --coverage
-```
 
 ## 📝 Available Scripts
 
