@@ -1,4 +1,4 @@
-import { Knex } from 'knex';
+import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<any> {
     // Enable uuid-ossp or pgcrypto for UUID generation
