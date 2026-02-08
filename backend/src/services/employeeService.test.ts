@@ -51,7 +51,7 @@ describe('EmployeeService', () => {
             mockDbQuery.mockResolvedValueOnce({ rows: mockEmployees });
             mockDbQuery.mockResolvedValueOnce({ rows: [{ count: '1' }] });
 
-            const result = await employeeService.listEmployees('tenant-1', 1, 20);
+            const result = await employeeService.listEmployees('tenant-1', 'tenant_1', 1, 20);
 
             expect(result.employees).toEqual(mockEmployees);
             expect(result.total).toBe(1);
@@ -62,7 +62,7 @@ describe('EmployeeService', () => {
             mockDbQuery.mockResolvedValueOnce({ rows: [] });
             mockDbQuery.mockResolvedValueOnce({ rows: [{ count: '0' }] });
 
-            await employeeService.listEmployees('tenant-1', 1, 20, {
+            await employeeService.listEmployees('tenant-1', 'tenant_1', 1, 20, {
                 employment_status: 'active',
             });
 
@@ -81,7 +81,7 @@ describe('EmployeeService', () => {
 
             mockRedisGet.mockResolvedValueOnce(JSON.stringify(employee));
 
-            const result = await employeeService.getEmployee('tenant-1', '1');
+            const result = await employeeService.getEmployee('tenant-1', 'tenant_1', '1');
 
             expect(result).toEqual(employee);
             expect(mockRedisGet).toHaveBeenCalledWith('employee:tenant-1:1');
@@ -97,7 +97,7 @@ describe('EmployeeService', () => {
             mockRedisGet.mockResolvedValueOnce(null);
             mockDbQuery.mockResolvedValueOnce({ rows: [employee] });
 
-            const result = await employeeService.getEmployee('tenant-1', '1');
+            const result = await employeeService.getEmployee('tenant-1', 'tenant_1', '1');
 
             expect(result).toEqual(employee);
             expect(mockDbQuery).toHaveBeenCalled();
@@ -112,7 +112,7 @@ describe('EmployeeService', () => {
             mockRedisGet.mockResolvedValueOnce(null);
             mockDbQuery.mockResolvedValueOnce({ rows: [] });
 
-            const result = await employeeService.getEmployee('tenant-1', '1');
+            const result = await employeeService.getEmployee('tenant-1', 'tenant_1', '1');
 
             expect(result).toBeNull();
         });
@@ -128,13 +128,13 @@ describe('EmployeeService', () => {
                 email_company: 'jane@company.com',
                 job_title: 'Manager',
                 department_id: 'dept-1',
-                employment_type: 'full_time',
+                employment_type: 'full_time' as const,
                 start_date: '2024-01-01',
             };
 
             mockDbQuery.mockResolvedValueOnce({ rows: [newEmployee] });
 
-            const result = await employeeService.createEmployee('tenant-1', newEmployee, 'user-1');
+            const result = await employeeService.createEmployee('tenant-1', 'tenant_1', newEmployee, 'user-1');
 
             expect(result).toEqual(newEmployee);
             expect(mockDbQuery).toHaveBeenCalled();
@@ -154,6 +154,7 @@ describe('EmployeeService', () => {
 
             const result = await employeeService.updateEmployee(
                 'tenant-1',
+                'tenant_1',
                 '1',
                 { first_name: 'Johnny' },
                 'user-1'
@@ -167,7 +168,7 @@ describe('EmployeeService', () => {
             mockDbQuery.mockResolvedValueOnce({ rows: [] });
 
             await expect(
-                employeeService.updateEmployee('tenant-1', '1', { first_name: 'Johnny' }, 'user-1')
+                employeeService.updateEmployee('tenant-1', 'tenant_1', '1', { first_name: 'Johnny' }, 'user-1')
             ).rejects.toThrow();
         });
     });
@@ -176,7 +177,7 @@ describe('EmployeeService', () => {
         it('should soft delete employee', async () => {
             mockDbQuery.mockResolvedValueOnce({ rowCount: 1 });
 
-            await employeeService.deleteEmployee('tenant-1', '1', 'user-1');
+            await employeeService.deleteEmployee('tenant-1', 'tenant_1', '1', 'user-1');
 
             expect(mockDbQuery).toHaveBeenCalled();
             expect(mockRedisDel).toHaveBeenCalledWith('employee:tenant-1:1');
@@ -185,7 +186,7 @@ describe('EmployeeService', () => {
         it('should throw error if employee not found', async () => {
             mockDbQuery.mockResolvedValueOnce({ rowCount: 0 });
 
-            await expect(employeeService.deleteEmployee('tenant-1', '1', 'user-1')).rejects.toThrow(
+            await expect(employeeService.deleteEmployee('tenant-1', 'tenant_1', '1', 'user-1')).rejects.toThrow(
                 'Employee not found'
             );
         });

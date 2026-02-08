@@ -1,0 +1,52 @@
+﻿
+> hrms-backend@1.0.0 test
+> jest
+
+2026-02-08 11:35:46 [[32MINFO[39M]: Employee created: uuid in tenant tenant-1 {"service":"hrms-backend"}
+2026-02-08 11:35:46 [[32MINFO[39M]: Employee updated: 1 in tenant tenant-1 {"service":"hrms-backend"}
+2026-02-08 11:35:46 [[31MERROR[39M]: Failed to update employee: Employee not found {"service":"hrms-backend","stack":"Error: Employee not found\n    at EmployeeService.updateEmployee (C:\\Users\\Alfarid\\OneDrive\\Desktop\\PROJECTS\\masirat\\HRMS\\BACKEND\\backend\\src\\services\\employeeService.ts:188:23)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at Object.<anonymous> (C:\\Users\\Alfarid\\OneDrive\\Desktop\\PROJECTS\\masirat\\HRMS\\BACKEND\\backend\\src\\services\\employeeService.test.ts:170:13)"}
+2026-02-08 11:35:46 [[32MINFO[39M]: Employee deleted: 1 in tenant tenant-1 {"service":"hrms-backend"}
+2026-02-08 11:35:46 [[31MERROR[39M]: Failed to delete employee: Employee not found {"service":"hrms-backend","stack":"Error: Employee not found\n    at EmployeeService.deleteEmployee (C:\\Users\\Alfarid\\OneDrive\\Desktop\\PROJECTS\\masirat\\HRMS\\BACKEND\\backend\\src\\services\\employeeService.ts:216:23)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at Object.<anonymous> (C:\\Users\\Alfarid\\OneDrive\\Desktop\\PROJECTS\\masirat\\HRMS\\BACKEND\\backend\\src\\services\\employeeService.test.ts:189:13)"}
+npm : PASS 
+src/services/employeeService.test.ts
+At line:1 char:1
++ npm test 2>&1 | Out-File -FilePath 
+test-output.txt -Encoding utf8; Ge ...
++ ~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecif 
+   ied: (PASS src/servic...Service.tes  
+  t.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCom 
+   mandError
+ 
+  EmployeeService
+    listEmployees
+      ΓêÜ should return list of 
+employees with pagination (4 ms)
+      ΓêÜ should apply filters (1 ms)
+    getEmployee
+      ΓêÜ should return employee from 
+cache if available
+      ΓêÜ should fetch from database if 
+not cached
+      ΓêÜ should return null if 
+employee not found (1 ms)
+    createEmployee
+      ΓêÜ should create an employee 
+successfully (4 ms)
+    updateEmployee
+      ΓêÜ should update employee 
+successfully (1 ms)
+      ΓêÜ should throw error if 
+employee not found (11 ms)
+    deleteEmployee
+      ΓêÜ should soft delete employee 
+(2 ms)
+      ΓêÜ should throw error if 
+employee not found (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       10 passed, 10 total
+Snapshots:   0 total
+Time:        3.871 s
+Ran all test suites.

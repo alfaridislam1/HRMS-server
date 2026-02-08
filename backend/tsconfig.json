@@ -36,7 +36,8 @@
       "./node_modules/@types"
     ],
     "types": [
-      "node"
+      "node",
+      "jest"
     ],
     "baseUrl": "./src",
     "paths": {
