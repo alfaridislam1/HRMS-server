@@ -42,8 +42,8 @@ export async function up(knex: Knex): Promise<any> {
     await knex.schema.withSchema('public').createTable('roles', (table) => {
 
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-        table.uuid('tenant_id').references('tenants.id').onDelete('CASCADE');
-        table.uuid('user_id').references('users.id').onDelete('CASCADE');
+        table.uuid('tenant_id').references('id').inTable('public.tenants').onDelete('CASCADE');
+        table.uuid('user_id').references('id').inTable('public.users').onDelete('CASCADE');
         table.string('code', 50).notNullable();
         table.string('name', 100).notNullable();
         table.text('description');
@@ -59,7 +59,7 @@ export async function up(knex: Knex): Promise<any> {
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
         table.string('name', 100).notNullable();
         table.string('code', 50);
-        table.uuid('parent_department_id').references('id').onDelete('SET NULL');
+        table.uuid('parent_department_id').references('id').inTable('tenant_001.departments').onDelete('SET NULL');
         table.string('budget', 20);
         table.timestamps(true, true);
     });
@@ -75,8 +75,8 @@ export async function up(knex: Knex): Promise<any> {
         table.string('phone_personal', 20);
         table.date('date_of_birth');
         table.string('job_title', 100);
-        table.uuid('department_id').references('departments.id');
-        table.uuid('manager_id').references('id').onDelete('SET NULL');
+        table.uuid('department_id').references('id').inTable('tenant_001.departments');
+        table.uuid('manager_id').references('id').inTable('tenant_001.employees').onDelete('SET NULL');
         table.enum('employment_type', ['full_time', 'part_time', 'contract', 'intern']).notNullable();
         table.enum('employment_status', ['active', 'on_leave', 'suspended', 'terminated']).defaultTo('active');
         table.date('start_date').notNullable();
@@ -104,8 +104,8 @@ export async function up(knex: Knex): Promise<any> {
 
     await knex.schema.withSchema('tenant_001').createTable('leave_requests', (table) => {
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-        table.uuid('employee_id').references('employees.id').onDelete('CASCADE').notNullable();
-        table.uuid('leave_type_id').references('leave_types.id').onDelete('CASCADE').notNullable();
+        table.uuid('employee_id').references('id').inTable('tenant_001.employees').onDelete('CASCADE').notNullable();
+        table.uuid('leave_type_id').references('id').inTable('tenant_001.leave_types').onDelete('CASCADE').notNullable();
         table.date('start_date').notNullable();
         table.date('end_date').notNullable();
         table.integer('duration_days');
@@ -121,7 +121,7 @@ export async function up(knex: Knex): Promise<any> {
 
     await knex.schema.withSchema('tenant_001').createTable('attendance', (table) => {
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-        table.uuid('employee_id').references('employees.id').onDelete('CASCADE').notNullable();
+        table.uuid('employee_id').references('id').inTable('tenant_001.employees').onDelete('CASCADE').notNullable();
         table.date('attendance_date').notNullable();
         table.time('check_in_time');
         table.time('check_out_time');
@@ -150,8 +150,8 @@ export async function up(knex: Knex): Promise<any> {
 
     await knex.schema.withSchema('tenant_001').createTable('salary_slips', (table) => {
         table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-        table.uuid('employee_id').references('employees.id').onDelete('CASCADE').notNullable();
-        table.uuid('payroll_period_id').references('payroll_periods.id').onDelete('CASCADE').notNullable();
+        table.uuid('employee_id').references('id').inTable('tenant_001.employees').onDelete('CASCADE').notNullable();
+        table.uuid('payroll_period_id').references('id').inTable('tenant_001.payroll_periods').onDelete('CASCADE').notNullable();
         table.decimal('base_salary', 12, 2);
         table.decimal('allowances', 12, 2).defaultTo(0);
         table.decimal('deductions', 12, 2).defaultTo(0);
